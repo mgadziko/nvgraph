@@ -2,7 +2,7 @@
 Type=Application
 Name=nvgraph
 Comment=GreenLotus NVIDIA GPU telemetry graphs
-Exec=/usr/bin/python3 /home/ricercar/nvgraph/nvgraph.py
+Exec=/usr/bin/python3 /home/ricercar/Documents/GitHub/nvgraph/nvgraph.py
 Icon=utilities-system-monitor
 Terminal=false
 Categories=System;Monitor;

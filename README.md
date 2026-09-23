@@ -24,3 +24,15 @@ python3 ~/nvgraph/nvgraph.py
 ```
 
 The **Launch nvgraph at sign-in** option creates or removes the signed-in user’s standard desktop autostart entry. Window size and placement are saved after a normal close in `~/.config/nvgraph/settings.json`.
+
+## Windows / BlackLotus
+
+The native Windows PowerShell/WinForms edition is in `windows/`. It uses the same five-second local `nvidia-smi` polling and side-by-side comparison layout, with 80 C temperature and GPU-reported power-limit warnings.
+
+Deploy it from the Mac checkout with:
+
+```zsh
+./scripts/deploy-blacklotus.sh
+```
+
+On BlackLotus, launch `C:\nvgraph\Start-nvgraph.cmd`. Its settings are saved under `%APPDATA%\nvgraph\settings.json`; its optional sign-in launch is stored in the current user's normal Windows Run key.
