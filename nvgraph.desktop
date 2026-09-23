@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=nvgraph
+Comment=GreenLotus NVIDIA GPU telemetry graphs
+Exec=/usr/bin/python3 /home/ricercar/nvgraph/nvgraph.py
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+Keywords=NVIDIA;GPU;temperature;power;telemetry;
