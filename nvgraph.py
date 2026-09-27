@@ -16,6 +16,10 @@ from gi.repository import Gdk, GLib, Gtk
 
 REFRESH_SECONDS = 5
 TEMPERATURE_LIMIT_C = 80.0
+TEMPERATURE_WARNING_C = 75.0
+POWER_WARNING_FRACTION = 0.90
+UTILIZATION_WARNING_PERCENT = 80.0
+MEMORY_WARNING_FRACTION = 0.85
 APP_DIRECTORY = "nvgraph"
 AUTOSTART_PATH = os.path.join(GLib.get_user_config_dir(), "autostart", "nvgraph.desktop")
 
@@ -68,16 +72,15 @@ def read_gpus() -> list[GPU]:
     return gpus
 
 
-class MetricRow(Gtk.Grid):
-    """One vertical metric row, with each GPU's thick graph beside the other."""
+class MetricRow:
+    """One metric row attached directly to the shared comparison grid."""
 
-    def __init__(self, label: str, gpu_count: int):
-        super().__init__(column_spacing=12)
+    def __init__(self, grid: Gtk.Grid, row_number: int, label: str, gpu_count: int):
         self.label = Gtk.Label(label=label)
         self.label.set_halign(Gtk.Align.START)
         self.label.set_valign(Gtk.Align.CENTER)
         self.label.set_size_request(150, -1)
-        self.attach(self.label, 0, 0, 1, 1)
+        grid.attach(self.label, 0, row_number, 1, 1)
         self.bars = []
         for column in range(gpu_count):
             bar = Gtk.ProgressBar()
@@ -85,17 +88,18 @@ class MetricRow(Gtk.Grid):
             bar.set_hexpand(True)
             bar.set_size_request(260, 36)
             bar.get_style_context().add_class("telemetry-bar")
-            self.attach(bar, column + 1, 0, 1, 1)
+            grid.attach(bar, column + 1, row_number, 1, 1)
             self.bars.append(bar)
 
-    def update(self, values: list[tuple[float, float, str, bool]]) -> None:
-        for bar, (value, maximum, text, is_critical) in zip(self.bars, values):
+    def update(self, values: list[tuple[float, float, str, bool, bool]]) -> None:
+        for bar, (value, maximum, text, is_critical, is_warning) in zip(self.bars, values):
             bar.set_fraction(0.0 if maximum <= 0 else min(value / maximum, 1.0))
             bar.set_text(text)
             context = bar.get_style_context()
             context.remove_class("normal")
+            context.remove_class("warning")
             context.remove_class("critical")
-            context.add_class("critical" if is_critical else "normal")
+            context.add_class("critical" if is_critical else "warning" if is_warning else "normal")
 
 
 class NVGraph(Gtk.Window):
@@ -156,6 +160,7 @@ class NVGraph(Gtk.Window):
     def install_css(self) -> None:
         css = b"""
         progressbar.telemetry-bar.normal progress { background-color: #2fb344; }
+        progressbar.telemetry-bar.warning progress { background-color: #e0a038; }
         progressbar.telemetry-bar.critical progress { background-color: #dc3545; }
         progressbar.telemetry-bar trough { min-height: 36px; }
         progressbar.telemetry-bar progress { min-height: 36px; }
@@ -209,7 +214,7 @@ class NVGraph(Gtk.Window):
                     autostart_file.write(
                         "[Desktop Entry]\nType=Application\nName=nvgraph\n"
                         "Comment=GreenLotus GPU telemetry dashboard\n"
-                        "Exec=/usr/bin/python3 /home/ricercar/nvgraph/nvgraph.py\n"
+                        "Exec=/usr/bin/python3 /home/ricercar/Documents/GitHub/nvgraph/nvgraph.py\n"
                         "Terminal=false\nX-GNOME-Autostart-enabled=true\n"
                     )
             elif os.path.exists(AUTOSTART_PATH):
@@ -223,23 +228,37 @@ class NVGraph(Gtk.Window):
             gpus = read_gpus()
             self.ensure_comparison_layout(gpus)
             self.metric_rows["temperature"].update([
-                (gpu.temperature, TEMPERATURE_LIMIT_C, f"{gpu.temperature:.0f} °C / {TEMPERATURE_LIMIT_C:.0f} °C", gpu.temperature > TEMPERATURE_LIMIT_C)
+                (
+                    gpu.temperature, TEMPERATURE_LIMIT_C,
+                    f"{gpu.temperature:.0f} °C / warn {TEMPERATURE_WARNING_C:.0f} °C / limit {TEMPERATURE_LIMIT_C:.0f} °C",
+                    gpu.temperature > TEMPERATURE_LIMIT_C,
+                    gpu.temperature >= TEMPERATURE_WARNING_C,
+                )
                 for gpu in gpus
             ])
             self.metric_rows["power"].update([
-                (gpu.power, gpu.power_limit, f"{gpu.power:.0f} W / {gpu.power_limit:.0f} W", gpu.power > gpu.power_limit)
+                (
+                    gpu.power, gpu.power_limit, f"{gpu.power:.0f} W / {gpu.power_limit:.0f} W",
+                    gpu.power > gpu.power_limit,
+                    gpu.power >= gpu.power_limit * POWER_WARNING_FRACTION,
+                )
                 for gpu in gpus
             ])
             self.metric_rows["utilization"].update([
-                (gpu.utilization, 100.0, f"{gpu.utilization:.0f}%", False) for gpu in gpus
+                (gpu.utilization, 100.0, f"{gpu.utilization:.0f}%", False, gpu.utilization >= UTILIZATION_WARNING_PERCENT)
+                for gpu in gpus
             ])
             self.metric_rows["memory"].update([
-                (gpu.memory_used, gpu.memory_total, f"{gpu.memory_used:.0f} / {gpu.memory_total:.0f} MiB", gpu.memory_used > gpu.memory_total)
+                (
+                    gpu.memory_used, gpu.memory_total, f"{gpu.memory_used:.0f} / {gpu.memory_total:.0f} MiB",
+                    gpu.memory_used > gpu.memory_total,
+                    gpu.memory_total > 0 and gpu.memory_used >= gpu.memory_total * MEMORY_WARNING_FRACTION,
+                )
                 for gpu in gpus
             ])
             self.status.set_text(
                 f"Last successful sample: {time.strftime('%H:%M:%S')} · refreshes every {REFRESH_SECONDS} seconds · "
-                f"red means a reported limit was exceeded"
+                f"amber means warning or high load · red means a reported limit was exceeded"
             )
         except Exception as error:
             self.status.set_text(f"Sample failed: {error}")
@@ -266,15 +285,14 @@ class NVGraph(Gtk.Window):
             self.comparison_grid.attach(heading, column, 0, 1, 1)
 
         row_definitions = (
-            ("temperature", "Temperature · 80 °C limit"),
+            ("temperature", "Temperature · 75 °C warning / 80 °C limit"),
             ("power", "Power draw"),
             ("utilization", "GPU utilization"),
             ("memory", "VRAM use"),
         )
         for row_number, (key, label) in enumerate(row_definitions, start=1):
-            row = MetricRow(label, len(gpus))
+            row = MetricRow(self.comparison_grid, row_number, label, len(gpus))
             self.metric_rows[key] = row
-            self.comparison_grid.attach(row, 0, row_number, len(gpus) + 1, 1)
         self.comparison_grid.show_all()
 
     def on_configure(self, _window: Gtk.Window, event: Gdk.EventConfigure) -> bool:

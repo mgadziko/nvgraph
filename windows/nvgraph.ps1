@@ -201,7 +201,7 @@ $Root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Fo
 $Form.Controls.Add($Root)
 
 $Title = New-Object System.Windows.Forms.Label
-$Title.Text = 'nvgraph'; $Title.AutoSize = $true
+$Title.Text = "nvgraph $([System.Environment]::MachineName)"; $Title.AutoSize = $true
 $Title.Font = New-Object System.Drawing.Font('Segoe UI', 20, [System.Drawing.FontStyle]::Bold)
 $Root.Controls.Add($Title, 0, 0)
 $Subtitle = New-Object System.Windows.Forms.Label
