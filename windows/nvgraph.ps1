@@ -7,6 +7,7 @@ Add-Type -AssemblyName System.Drawing
 $NvGraphBarSource = @'
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 public class NvGraphBar : Panel {
@@ -27,13 +28,53 @@ public class NvGraphBar : Panel {
     protected override void OnPaint(PaintEventArgs e) {
         base.OnPaint(e);
         var fraction = MeterMaximum <= 0 ? 0 : Math.Max(0, Math.Min(MeterValue / MeterMaximum, 1));
-        e.Graphics.FillRectangle(new SolidBrush(Color.FromArgb(45, 45, 48)), ClientRectangle);
-        var fill = new Rectangle(0, 0, (int)Math.Round(ClientSize.Width * fraction), ClientSize.Height);
-        var color = Critical ? Color.FromArgb(200, 57, 69) : (Warning ? Color.FromArgb(224, 156, 40) : Color.FromArgb(47, 179, 75));
-        e.Graphics.FillRectangle(new SolidBrush(color), fill);
+        if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        var bounds = new RectangleF(0.5f, 0.5f, ClientSize.Width - 1f, ClientSize.Height - 1f);
+        var radius = bounds.Height / 2f;
+        using (var trough = RoundedRectangle(bounds, radius))
+        using (var troughBrush = new SolidBrush(Color.FromArgb(45, 45, 48))) {
+            e.Graphics.FillPath(troughBrush, trough);
+
+            var fillWidth = (float)(ClientSize.Width * fraction);
+            if (fillWidth > 0) {
+                var color = Critical ? Color.FromArgb(200, 57, 69) : (Warning ? Color.FromArgb(224, 156, 40) : Color.FromArgb(47, 179, 75));
+                var fillBounds = new RectangleF(0.5f, 0.5f, Math.Min(fillWidth, bounds.Width), bounds.Height);
+                using (var fillPath = RoundedRectangle(fillBounds, Math.Min(radius, fillBounds.Width / 2f)))
+                using (var fillBrush = new SolidBrush(color)) {
+                    var oldClip = e.Graphics.Clip;
+                    e.Graphics.SetClip(trough);
+                    e.Graphics.FillPath(fillBrush, fillPath);
+                    e.Graphics.Clip = oldClip;
+                    oldClip.Dispose();
+                }
+            }
+
+            using (var border = new Pen(Color.DimGray))
+                e.Graphics.DrawPath(border, trough);
+        }
+
         TextRenderer.DrawText(e.Graphics, DisplayText, Font, ClientRectangle, Color.White,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-        e.Graphics.DrawRectangle(Pens.DimGray, 0, 0, Math.Max(0, ClientSize.Width - 1), Math.Max(0, ClientSize.Height - 1));
+    }
+
+    private static GraphicsPath RoundedRectangle(RectangleF rectangle, float radius) {
+        var path = new GraphicsPath();
+        if (rectangle.Width <= 0 || rectangle.Height <= 0) return path;
+        radius = Math.Max(0, Math.Min(radius, Math.Min(rectangle.Width, rectangle.Height) / 2f));
+        if (radius <= 0) {
+            path.AddRectangle(rectangle);
+            return path;
+        }
+        var diameter = radius * 2f;
+        path.AddArc(rectangle.X, rectangle.Y, diameter, diameter, 180, 90);
+        path.AddArc(rectangle.Right - diameter, rectangle.Y, diameter, diameter, 270, 90);
+        path.AddArc(rectangle.Right - diameter, rectangle.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(rectangle.X, rectangle.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
     }
 }
 '@
