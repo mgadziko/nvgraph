@@ -40,7 +40,7 @@ public class NvGraphBar : Panel {
 
             var fillWidth = (float)(ClientSize.Width * fraction);
             if (fillWidth > 0) {
-                var color = Critical ? Color.FromArgb(200, 57, 69) : (Warning ? Color.FromArgb(224, 156, 40) : Color.FromArgb(47, 179, 75));
+                var color = Critical ? Color.FromArgb(236, 95, 109) : (Warning ? Color.FromArgb(228, 173, 74) : Color.FromArgb(64, 199, 122));
                 var fillBounds = new RectangleF(0.5f, 0.5f, Math.Min(fillWidth, bounds.Width), bounds.Height);
                 using (var fillPath = RoundedRectangle(fillBounds, Math.Min(radius, fillBounds.Width / 2f)))
                 using (var fillBrush = new SolidBrush(color)) {
@@ -99,8 +99,9 @@ function Convert-ToNumber([string]$Value) {
 
 function Read-GpuPolicies {
     $defaults = @{
-        temperature_warning_c = 80.0
-        temperature_critical_c = 90.0
+        # Match the Linux Thermal Monitor: amber at 75 C and red above 80 C.
+        temperature_warning_c = 75.0
+        temperature_critical_c = 80.0
         # A zero power limit means use the limit reported by nvidia-smi.
         power_limit_w = 0.0
     }
@@ -322,10 +323,10 @@ function Update-Comparison {
             $policy = Get-GpuPolicy $gpu.Name $policies
             $effectivePowerLimit = if ($policy.PowerLimit -gt 0) { $policy.PowerLimit } else { $gpu.PowerLimit }
             $updates = @{
-                Temperature = @($gpu.Temperature, $policy.TemperatureCritical, ("{0:N0} C - warn {1:N0} C / critical {2:N0} C" -f $gpu.Temperature, $policy.TemperatureWarning, $policy.TemperatureCritical), ($gpu.Temperature -ge $policy.TemperatureCritical), ($gpu.Temperature -ge $policy.TemperatureWarning))
-                Power = @($gpu.Power, $effectivePowerLimit, ("{0:N0} W / {1:N0} W" -f $gpu.Power, $effectivePowerLimit), ($gpu.Power -gt $effectivePowerLimit))
-                Utilization = @($gpu.Utilization, 100, ("{0:N0}%" -f $gpu.Utilization), $false)
-                Memory = @($gpu.MemoryUsed, $gpu.MemoryTotal, ("{0:N0} / {1:N0} MiB" -f $gpu.MemoryUsed, $gpu.MemoryTotal), ($gpu.MemoryUsed -gt $gpu.MemoryTotal))
+                Temperature = @($gpu.Temperature, $policy.TemperatureCritical, ("{0:N0} C - warn {1:N0} C / limit {2:N0} C" -f $gpu.Temperature, $policy.TemperatureWarning, $policy.TemperatureCritical), ($gpu.Temperature -gt $policy.TemperatureCritical), ($gpu.Temperature -ge $policy.TemperatureWarning))
+                Power = @($gpu.Power, $effectivePowerLimit, ("{0:N0} W / {1:N0} W" -f $gpu.Power, $effectivePowerLimit), ($gpu.Power -gt $effectivePowerLimit), ($gpu.Power -ge ($effectivePowerLimit * 0.90)))
+                Utilization = @($gpu.Utilization, 100, ("{0:N0}%" -f $gpu.Utilization), $false, ($gpu.Utilization -ge 80))
+                Memory = @($gpu.MemoryUsed, $gpu.MemoryTotal, ("{0:N0} / {1:N0} MiB" -f $gpu.MemoryUsed, $gpu.MemoryTotal), ($gpu.MemoryUsed -gt $gpu.MemoryTotal), ($gpu.MemoryTotal -gt 0 -and $gpu.MemoryUsed -ge ($gpu.MemoryTotal * 0.85)))
             }
             foreach ($key in $updates.Keys) {
                 $bar = $MetricBars[$key][$column]; $value = $updates[$key]

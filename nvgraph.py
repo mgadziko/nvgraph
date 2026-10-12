@@ -159,9 +159,9 @@ class NVGraph(Gtk.Window):
 
     def install_css(self) -> None:
         css = b"""
-        progressbar.telemetry-bar.normal progress { background-color: #2fb344; }
-        progressbar.telemetry-bar.warning progress { background-color: #e0a038; }
-        progressbar.telemetry-bar.critical progress { background-color: #dc3545; }
+        progressbar.telemetry-bar.normal progress { background-color: #40c77a; }
+        progressbar.telemetry-bar.warning progress { background-color: #e4ad4a; }
+        progressbar.telemetry-bar.critical progress { background-color: #ec5f6d; }
         progressbar.telemetry-bar trough { min-height: 36px; }
         progressbar.telemetry-bar progress { min-height: 36px; }
         """
