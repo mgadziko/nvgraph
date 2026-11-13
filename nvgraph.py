@@ -34,6 +34,8 @@ class GPU:
     utilization: float
     memory_used: float
     memory_total: float
+    graphics_clock: str
+    memory_clock: str
 
 
 def run(command: list[str]) -> str:
@@ -54,18 +56,20 @@ def numeric(value: str) -> float:
 def read_gpus() -> list[GPU]:
     output = run([
         "nvidia-smi",
-        "--query-gpu=index,name,temperature.gpu,power.draw,power.limit,utilization.gpu,memory.used,memory.total",
+        "--query-gpu=index,name,temperature.gpu,power.draw,power.limit,utilization.gpu,memory.used,memory.total,"
+        "clocks.current.graphics,clocks.current.memory",
         "--format=csv,noheader,nounits",
     ])
     gpus = []
     for line in output.splitlines():
         fields = [field.strip() for field in line.split(",")]
-        if len(fields) != 8:
+        if len(fields) != 10:
             continue
         gpus.append(GPU(
             index=fields[0], name=fields[1], temperature=numeric(fields[2]),
             power=numeric(fields[3]), power_limit=numeric(fields[4]), utilization=numeric(fields[5]),
             memory_used=numeric(fields[6]), memory_total=numeric(fields[7]),
+            graphics_clock=fields[8], memory_clock=fields[9],
         ))
     if not gpus:
         raise RuntimeError("No NVIDIA GPUs were returned by nvidia-smi.")
@@ -256,6 +260,12 @@ class NVGraph(Gtk.Window):
                 )
                 for gpu in gpus
             ])
+            for labels, values in zip(self.clock_rows, (
+                (gpu.graphics_clock for gpu in gpus),
+                (gpu.memory_clock for gpu in gpus),
+            )):
+                for label, value in zip(labels, values):
+                    label.set_text(f"{value} MHz" if value.isdecimal() else "N/A")
             self.status.set_text(
                 f"Last successful sample: {time.strftime('%H:%M:%S')} · refreshes every {REFRESH_SECONDS} seconds · "
                 f"amber means warning or high load · red means a reported limit was exceeded"
@@ -293,6 +303,17 @@ class NVGraph(Gtk.Window):
         for row_number, (key, label) in enumerate(row_definitions, start=1):
             row = MetricRow(self.comparison_grid, row_number, label, len(gpus))
             self.metric_rows[key] = row
+        self.clock_rows = []
+        for row_number, title in enumerate(("GPU core clock", "VRAM clock"), start=len(row_definitions) + 1):
+            heading = Gtk.Label(label=title)
+            heading.set_halign(Gtk.Align.START)
+            self.comparison_grid.attach(heading, 0, row_number, 1, 1)
+            labels = []
+            for column in range(1, len(gpus) + 1):
+                label = Gtk.Label()
+                self.comparison_grid.attach(label, column, row_number, 1, 1)
+                labels.append(label)
+            self.clock_rows.append(labels)
         self.comparison_grid.show_all()
 
     def on_configure(self, _window: Gtk.Window, event: Gdk.EventConfigure) -> bool:
