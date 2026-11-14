@@ -14,6 +14,7 @@ public class NvGraphBar : Panel {
     public double MeterValue { get; set; }
     public double MeterMaximum { get; set; }
     public bool Warning { get; set; }
+    public bool Blue { get; set; }
     public bool Purple { get; set; }
     public bool Critical { get; set; }
     public string DisplayText { get; set; }
@@ -41,7 +42,7 @@ public class NvGraphBar : Panel {
 
             var fillWidth = (float)(ClientSize.Width * fraction);
             if (fillWidth > 0) {
-                var color = Purple ? Color.FromArgb(177, 132, 245) : Critical ? Color.FromArgb(236, 95, 109) : (Warning ? Color.FromArgb(228, 173, 74) : Color.FromArgb(64, 199, 122));
+                var color = Blue ? Color.FromArgb(87, 152, 255) : Purple ? Color.FromArgb(177, 132, 245) : Critical ? Color.FromArgb(236, 95, 109) : (Warning ? Color.FromArgb(228, 173, 74) : Color.FromArgb(64, 199, 122));
                 var fillBounds = new RectangleF(0.5f, 0.5f, Math.Min(fillWidth, bounds.Width), bounds.Height);
                 using (var fillPath = RoundedRectangle(fillBounds, Math.Min(radius, fillBounds.Width / 2f)))
                 using (var fillBrush = new SolidBrush(color)) {
@@ -100,9 +101,6 @@ function Convert-ToNumber([string]$Value) {
 
 function Read-GpuPolicies {
     $defaults = @{
-        # Match the Linux Thermal Monitor: amber at 75 C and red above 80 C.
-        temperature_warning_c = 75.0
-        temperature_critical_c = 80.0
         # A zero power limit means use the limit reported by nvidia-smi.
         power_limit_w = 0.0
     }
@@ -131,7 +129,7 @@ function Read-GpuPolicies {
         if ($null -ne $section -and $line -match '^([^=]+?)\s*=\s*(.+)$') {
             $key = $Matches[1].Trim().ToLowerInvariant()
             $value = Convert-ToNumber $Matches[2].Trim()
-            if ($key -in @('power_limit_w', 'temperature_warning_c', 'temperature_critical_c')) {
+            if ($key -eq 'power_limit_w') {
                 $section[$key] = $value
             }
         }
@@ -148,8 +146,6 @@ function Get-GpuPolicy([string]$Name, $Policies) {
     }
     return [PSCustomObject]@{
         PowerLimit = & $valueFor 'power_limit_w'
-        TemperatureWarning = & $valueFor 'temperature_warning_c'
-        TemperatureCritical = & $valueFor 'temperature_critical_c'
     }
 }
 
@@ -293,7 +289,7 @@ function Build-Comparison([array]$Gpus) {
     $Comparison.Controls.Add((New-Header 'Metric'), 0, 0)
     for ($column = 0; $column -lt $Gpus.Count; $column++) { $Comparison.Controls.Add((New-Header ("GPU {0} · {1}" -f $Gpus[$column].Index, $Gpus[$column].Name)), $column + 1, 0) }
     $definitions = @(
-        @{ Key = 'Temperature'; Label = 'Temperature - 83-87 C purple' },
+        @{ Key = 'Temperature'; Label = 'Temperature - 75 / 80 / 85 / 90 C' },
         @{ Key = 'Power'; Label = 'Power draw' },
         @{ Key = 'Utilization'; Label = 'GPU utilization' },
         @{ Key = 'Memory'; Label = 'VRAM use' }
@@ -343,7 +339,7 @@ function Update-Comparison {
             $policy = Get-GpuPolicy $gpu.Name $policies
             $effectivePowerLimit = if ($policy.PowerLimit -gt 0) { $policy.PowerLimit } else { $gpu.PowerLimit }
             $updates = @{
-                Temperature = @($gpu.Temperature, $policy.TemperatureCritical, ("{0:N0} C - warn {1:N0} C / limit {2:N0} C" -f $gpu.Temperature, $policy.TemperatureWarning, $policy.TemperatureCritical), ($gpu.Temperature -gt $policy.TemperatureCritical), ($gpu.Temperature -ge $policy.TemperatureWarning))
+                Temperature = @($gpu.Temperature, 80, ("{0:N0} C" -f $gpu.Temperature), ($gpu.Temperature -ge 80), ($gpu.Temperature -ge 75))
                 Power = @($gpu.Power, $effectivePowerLimit, ("{0:N0} W / {1:N0} W" -f $gpu.Power, $effectivePowerLimit), ($gpu.Power -gt $effectivePowerLimit), ($gpu.Power -ge ($effectivePowerLimit * 0.90)))
                 Utilization = @($gpu.Utilization, 100, ("{0:N0}%" -f $gpu.Utilization), $false, ($gpu.Utilization -ge 80))
                 Memory = @($gpu.MemoryUsed, $gpu.MemoryTotal, ("{0:N0} / {1:N0} MiB" -f $gpu.MemoryUsed, $gpu.MemoryTotal), ($gpu.MemoryUsed -gt $gpu.MemoryTotal), ($gpu.MemoryTotal -gt 0 -and $gpu.MemoryUsed -ge ($gpu.MemoryTotal * 0.85)))
@@ -351,7 +347,8 @@ function Update-Comparison {
             foreach ($key in $updates.Keys) {
                 $bar = $MetricBars[$key][$column]; $value = $updates[$key]
                 $bar.MeterValue = $value[0]; $bar.MeterMaximum = $value[1]; $bar.DisplayText = $value[2]; $bar.Critical = $value[3]; $bar.Warning = if ($value.Count -ge 5) { $value[4] } else { $false }
-                $bar.Purple = $key -eq 'Temperature' -and $gpu.Temperature -ge 83 -and $gpu.Temperature -le 87
+                $bar.Purple = $key -eq 'Temperature' -and $gpu.Temperature -ge 85 -and $gpu.Temperature -lt 90
+                $bar.Blue = $key -eq 'Temperature' -and $gpu.Temperature -ge 90
                 $bar.Invalidate()
             }
             foreach ($key in $ClockLabels.Keys) {
@@ -360,7 +357,7 @@ function Update-Comparison {
             }
         }
         $policyStatus = if ($policies.Found) { "policy: $PolicyPath" } else { "policy file missing; using built-in defaults" }
-        $Status.Text = "Last successful sample: $(Get-Date -Format 'HH:mm:ss') - refreshes every $RefreshSeconds seconds - $policyStatus - amber means warning, red means critical"
+        $Status.Text = "Last successful sample: $(Get-Date -Format 'HH:mm:ss') - refreshes every $RefreshSeconds seconds - $policyStatus"
     } catch { $Status.Text = "Sample failed: $($_.Exception.Message)" }
 }
 

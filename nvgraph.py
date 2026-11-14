@@ -17,7 +17,8 @@ from gi.repository import Gdk, GLib, Gtk
 REFRESH_SECONDS = 5
 TEMPERATURE_LIMIT_C = 80.0
 TEMPERATURE_WARNING_C = 75.0
-TEMPERATURE_PURPLE_RANGE_C = (83.0, 87.0)
+TEMPERATURE_PURPLE_C = 85.0
+TEMPERATURE_BLUE_C = 90.0
 POWER_WARNING_FRACTION = 0.90
 UTILIZATION_WARNING_PERCENT = 80.0
 MEMORY_WARNING_FRACTION = 0.85
@@ -100,7 +101,7 @@ class MetricRow:
         self,
         values: list[tuple[float, float, str, bool, bool]],
         *,
-        purple_range: tuple[float, float] | None = None,
+        temperature: bool = False,
     ) -> None:
         for bar, (value, maximum, text, is_critical, is_warning) in zip(self.bars, values):
             bar.set_fraction(0.0 if maximum <= 0 else min(value / maximum, 1.0))
@@ -110,7 +111,10 @@ class MetricRow:
             context.remove_class("warning")
             context.remove_class("critical")
             context.remove_class("purple")
-            if purple_range is not None and purple_range[0] <= value <= purple_range[1]:
+            context.remove_class("blue")
+            if temperature and value >= TEMPERATURE_BLUE_C:
+                context.add_class("blue")
+            elif temperature and value >= TEMPERATURE_PURPLE_C:
                 context.add_class("purple")
             else:
                 context.add_class("critical" if is_critical else "warning" if is_warning else "normal")
@@ -176,6 +180,7 @@ class NVGraph(Gtk.Window):
         progressbar.telemetry-bar.normal progress { background-color: #40c77a; }
         progressbar.telemetry-bar.warning progress { background-color: #e4ad4a; }
         progressbar.telemetry-bar.critical progress { background-color: #ec5f6d; }
+        progressbar.telemetry-bar.blue progress { background-color: #5798ff; }
         progressbar.telemetry-bar.purple progress { background-color: #b184f5; }
         progressbar.telemetry-bar trough { min-height: 36px; }
         progressbar.telemetry-bar progress { min-height: 36px; }
@@ -245,12 +250,12 @@ class NVGraph(Gtk.Window):
             self.metric_rows["temperature"].update([
                 (
                     gpu.temperature, TEMPERATURE_LIMIT_C,
-                    f"{gpu.temperature:.0f} °C / warn {TEMPERATURE_WARNING_C:.0f} °C / limit {TEMPERATURE_LIMIT_C:.0f} °C",
-                    gpu.temperature > TEMPERATURE_LIMIT_C,
+                    f"{gpu.temperature:.0f} °C",
+                    gpu.temperature >= TEMPERATURE_LIMIT_C,
                     gpu.temperature >= TEMPERATURE_WARNING_C,
                 )
                 for gpu in gpus
-            ], purple_range=TEMPERATURE_PURPLE_RANGE_C)
+            ], temperature=True)
             self.metric_rows["power"].update([
                 (
                     gpu.power, gpu.power_limit, f"{gpu.power:.0f} W / {gpu.power_limit:.0f} W",
@@ -306,7 +311,7 @@ class NVGraph(Gtk.Window):
             self.comparison_grid.attach(heading, column, 0, 1, 1)
 
         row_definitions = (
-            ("temperature", "Temperature · 75 °C warning / 80 °C limit\n83–87 °C purple"),
+            ("temperature", "Temperature · 75 / 80 / 85 / 90 °C"),
             ("power", "Power draw"),
             ("utilization", "GPU utilization"),
             ("memory", "VRAM use"),

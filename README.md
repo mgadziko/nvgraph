@@ -6,9 +6,10 @@
 
 - **Temperature**:
   - Green: below 75°C
-  - Amber: 75°C through 80°C
-  - Red: above 80°C and outside the purple band (with the default thresholds)
-  - Purple: 83–87°C inclusive
+  - Amber: 75°C to below 80°C
+  - Red: 80°C to below 85°C
+  - Purple: 85°C to below 90°C
+  - Blue: 90°C and above
 - **Power**:
   - Green: below 90% of the reported or configured power limit
   - Amber: 90% through 100% of that limit
@@ -21,9 +22,7 @@
   - Amber: 85% through 100% of the reported total
   - Red: above the reported total
 
-Both editions give the purple band priority over the other temperature colors.
-
-Both editions use Thermal Monitor's palette: green `#40c77a`, amber `#e4ad4a`, and red `#ec5f6d`. Linux uses fixed 75/80°C thresholds. Windows ships with the same thresholds and supports per-GPU overrides. `nvidia-smi` remains the source of truth for each GPU's live temperature, power limit, utilization, and VRAM values.
+Both editions use the same fixed temperature bands. Temperature colors are display indicators; NVGraph does not change GPU limits.
 
 ## Installation
 
@@ -46,7 +45,7 @@ The **Launch nvgraph at sign-in** option creates or removes the signed-in user�
 
 The native Windows PowerShell/WinForms edition is in `windows/`. It displays the same metrics and default color bands as the Linux edition.
 
-`nvgraph.ini` is reloaded with every sample. GPU section names match the model string returned by `nvidia-smi`; `[defaults]` applies when no model-specific section matches. A `power_limit_w` of `0` uses the current GPU-reported limit. The included per-GPU power limits cover the current fleet's Tesla M40, Tesla P40, Tesla P100 PCIe 16 GB, RTX 3090, and RTX 4090 GPUs. Temperature overrides remain supported for compatibility, but the shipped file uses the shared 75/80°C defaults.
+`nvgraph.ini` is reloaded with every sample. GPU section names match the model string returned by `nvidia-smi`; `[defaults]` applies when no model-specific section matches. A `power_limit_w` of `0` uses the current GPU-reported limit. The included per-GPU power limits cover the current fleet's Tesla M40, Tesla P40, Tesla P100 PCIe 16 GB, RTX 3090, and RTX 4090 GPUs. Temperature bands are built into both editions.
 
 Confirm actual hardware power limits with `nvidia-smi` before relying on an edited policy.
 
@@ -58,4 +57,4 @@ scp windows/nvgraph.ps1 windows/Start-nvgraph.cmd cheyenne:'C:/nvgraph/'
 
 On a Windows host, launch `C:\nvgraph\Start-nvgraph.cmd` from a signed-in desktop session. For a fresh install, copy `windows/nvgraph.ini` to the same folder. Keep `nvgraph.ini` beside `nvgraph.ps1`. Window settings are saved under `%APPDATA%\nvgraph\settings.json`; optional sign-in launch is stored in the current user's normal Windows Run key. A WinForms window cannot be displayed from an SSH/service session.
 
-The clock readouts and purple band were deployed to Cheyenne (RTX 4090). Hal (dual RTX 3090) has an earlier Windows build.
+Windows deployment hosts include Cheyenne (RTX 4090) and Hal3090 (dual RTX 3090).
