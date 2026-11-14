@@ -1,4 +1,4 @@
-# nvgraph for Windows — local NVIDIA telemetry dashboard.
+﻿# nvgraph for Windows — local NVIDIA telemetry dashboard.
 # Requires only Windows PowerShell, Windows Forms, and nvidia-smi.exe.
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -14,6 +14,7 @@ public class NvGraphBar : Panel {
     public double MeterValue { get; set; }
     public double MeterMaximum { get; set; }
     public bool Warning { get; set; }
+    public bool Purple { get; set; }
     public bool Critical { get; set; }
     public string DisplayText { get; set; }
 
@@ -40,7 +41,7 @@ public class NvGraphBar : Panel {
 
             var fillWidth = (float)(ClientSize.Width * fraction);
             if (fillWidth > 0) {
-                var color = Critical ? Color.FromArgb(236, 95, 109) : (Warning ? Color.FromArgb(228, 173, 74) : Color.FromArgb(64, 199, 122));
+                var color = Purple ? Color.FromArgb(177, 132, 245) : Critical ? Color.FromArgb(236, 95, 109) : (Warning ? Color.FromArgb(228, 173, 74) : Color.FromArgb(64, 199, 122));
                 var fillBounds = new RectangleF(0.5f, 0.5f, Math.Min(fillWidth, bounds.Width), bounds.Height);
                 using (var fillPath = RoundedRectangle(fillBounds, Math.Min(radius, fillBounds.Width / 2f)))
                 using (var fillBrush = new SolidBrush(color)) {
@@ -153,17 +154,18 @@ function Get-GpuPolicy([string]$Name, $Policies) {
 }
 
 function Get-GpuReadings {
-    $output = & nvidia-smi --query-gpu=index,name,temperature.gpu,power.draw,power.limit,utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>&1
+    $output = & nvidia-smi --query-gpu=index,name,temperature.gpu,power.draw,power.limit,utilization.gpu,memory.used,memory.total,clocks.current.graphics,clocks.current.memory --format=csv,noheader,nounits 2>&1
     if ($LASTEXITCODE -ne 0) { throw ($output -join [Environment]::NewLine) }
     $gpus = @()
     foreach ($line in $output) {
         $field = $line.ToString().Split(',').ForEach({ $_.Trim() })
-        if ($field.Count -ne 8) { continue }
+        if ($field.Count -ne 10) { continue }
         $gpus += [PSCustomObject]@{
             Index = $field[0]; Name = $field[1]; Temperature = Convert-ToNumber $field[2]
             Power = Convert-ToNumber $field[3]; PowerLimit = Convert-ToNumber $field[4]
             Utilization = Convert-ToNumber $field[5]; MemoryUsed = Convert-ToNumber $field[6]
             MemoryTotal = Convert-ToNumber $field[7]
+            GraphicsClock = $field[8]; MemoryClock = $field[9]
         }
     }
     if ($gpus.Count -eq 0) { throw 'nvidia-smi returned no NVIDIA GPUs.' }
@@ -224,9 +226,9 @@ $Form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
 $Form.ForeColor = [System.Drawing.Color]::Gainsboro
 $Form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $Form.StartPosition = 'CenterScreen'
-$Form.MinimumSize = New-Object System.Drawing.Size(880, 410)
+$Form.MinimumSize = New-Object System.Drawing.Size(880, 460)
 $Form.Size = New-Object System.Drawing.Size(1040, 500)
-if ($settings.width -ge 880 -and $settings.height -ge 410) {
+if ($settings.width -ge 880 -and $settings.height -ge 460) {
     $Form.StartPosition = 'Manual'
     $Form.Size = New-Object System.Drawing.Size([int]$settings.width, [int]$settings.height)
     $Form.Location = New-Object System.Drawing.Point([int]$settings.x, [int]$settings.y)
@@ -276,20 +278,22 @@ $Controls.Controls.AddRange(@($LaunchAtSignIn, $Refresh, $Quit))
 $Root.Controls.Add($Controls, 0, 4)
 
 $MetricBars = @{}
+$ClockLabels = @{}
 function Build-Comparison([array]$Gpus) {
     $Comparison.Controls.Clear(); $Comparison.ColumnStyles.Clear(); $Comparison.RowStyles.Clear()
     # Reserve a final flexible spacer row.  Without it, WinForms gives spare
     # vertical space to the final metric row, making VRAM appear thicker.
-    $Comparison.ColumnCount = $Gpus.Count + 1; $Comparison.RowCount = 6
+    $Comparison.ColumnCount = $Gpus.Count + 1; $Comparison.RowCount = 8
     $Comparison.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 180)))
     foreach ($gpu in $Gpus) { $Comparison.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, (100 / $Gpus.Count)))) }
     $Comparison.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))
     foreach ($unused in 1..4) { $Comparison.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 50))) }
+    foreach ($unused in 1..2) { $Comparison.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 26))) }
     $Comparison.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
     $Comparison.Controls.Add((New-Header 'Metric'), 0, 0)
     for ($column = 0; $column -lt $Gpus.Count; $column++) { $Comparison.Controls.Add((New-Header ("GPU {0} · {1}" -f $Gpus[$column].Index, $Gpus[$column].Name)), $column + 1, 0) }
     $definitions = @(
-        @{ Key = 'Temperature'; Label = 'Temperature - per-GPU warning / critical policy' },
+        @{ Key = 'Temperature'; Label = 'Temperature - 83-87 C purple' },
         @{ Key = 'Power'; Label = 'Power draw' },
         @{ Key = 'Utilization'; Label = 'GPU utilization' },
         @{ Key = 'Memory'; Label = 'VRAM use' }
@@ -308,6 +312,22 @@ function Build-Comparison([array]$Gpus) {
             $Comparison.Controls.Add($bar, $column + 1, $row + 1)
             $script:MetricBars[$definition.Key] += $bar
         }
+    }
+    $script:ClockLabels = @{}
+    $row = $definitions.Count + 1
+    foreach ($clock in @(
+        @{ Key = 'GraphicsClock'; Label = 'GPU core clock' },
+        @{ Key = 'MemoryClock'; Label = 'VRAM clock' }
+    )) {
+        $Comparison.Controls.Add((New-MetricLabel $clock.Label), 0, $row)
+        $script:ClockLabels[$clock.Key] = @()
+        for ($column = 0; $column -lt $Gpus.Count; $column++) {
+            $label = New-MetricLabel ''
+            $label.TextAlign = 'MiddleCenter'
+            $Comparison.Controls.Add($label, $column + 1, $row)
+            $script:ClockLabels[$clock.Key] += $label
+        }
+        $row++
     }
 }
 
@@ -330,7 +350,13 @@ function Update-Comparison {
             }
             foreach ($key in $updates.Keys) {
                 $bar = $MetricBars[$key][$column]; $value = $updates[$key]
-                $bar.MeterValue = $value[0]; $bar.MeterMaximum = $value[1]; $bar.DisplayText = $value[2]; $bar.Critical = $value[3]; $bar.Warning = if ($value.Count -ge 5) { $value[4] } else { $false }; $bar.Invalidate()
+                $bar.MeterValue = $value[0]; $bar.MeterMaximum = $value[1]; $bar.DisplayText = $value[2]; $bar.Critical = $value[3]; $bar.Warning = if ($value.Count -ge 5) { $value[4] } else { $false }
+                $bar.Purple = $key -eq 'Temperature' -and $gpu.Temperature -ge 83 -and $gpu.Temperature -le 87
+                $bar.Invalidate()
+            }
+            foreach ($key in $ClockLabels.Keys) {
+                $clock = $gpu.$key
+                $ClockLabels[$key][$column].Text = if ($clock -match '^\d+$') { "$clock MHz" } else { 'N/A' }
             }
         }
         $policyStatus = if ($policies.Found) { "policy: $PolicyPath" } else { "policy file missing; using built-in defaults" }
