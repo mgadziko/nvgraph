@@ -20,6 +20,8 @@
   - Amber: 85% through 100% of the reported total
   - Red: above the reported total
 
+The Linux GTK edition displays 83–87°C inclusive in purple, overriding red for that band. Above 87°C, the bar returns to red.
+
 Both editions use Thermal Monitor's palette: green `#40c77a`, amber `#e4ad4a`, and red `#ec5f6d`. The shipped temperature policy is intentionally fixed at 75/80°C for every GPU model so it agrees with the Linux Thermal Monitor. `nvidia-smi` remains the source of truth for each GPU's live temperature, power limit, utilization, and VRAM values.
 
 ## Installation
